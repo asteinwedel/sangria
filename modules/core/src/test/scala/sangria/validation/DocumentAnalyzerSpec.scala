@@ -17,6 +17,7 @@ class DocumentAnalyzerSpec extends AnyWordSpec with Matchers with StringMatchers
       EnumValue("ONE", value = 1),
       EnumValue("TWO", value = 2, deprecationReason = Some("Some enum reason."))))
 
+  // TODO: directive and input object field arg deprecation
   val QueryType = ObjectType(
     "Query",
     fields[Unit, Unit](
@@ -32,7 +33,32 @@ class DocumentAnalyzerSpec extends AnyWordSpec with Matchers with StringMatchers
         "deprecatedField",
         OptionType(StringType),
         deprecationReason = Some("Some field reason."),
-        resolve = _ => "foo")
+        resolve = _ => "foo"),
+      Field(
+        "fieldWithDeprecatedArg",
+        OptionType(StringType),
+        resolve = ctx => ctx.argOpt[String]("deprecatedArg"),
+        arguments = Argument(
+          "deprecatedArg",
+          OptionInputType(StringType)
+        ).withDeprecationReason("Some arg reason.") :: Nil
+      ),
+      Field(
+        "fieldWithInputObjectFieldDeprecated",
+        OptionType(StringType),
+        resolve = _ => "foo",
+        arguments = Argument(
+          "input",
+          InputObjectType(
+            "FooInput",
+            "",
+            fieldsFn = () =>
+              InputField("deprecatedField", StringType)
+                .withDeprecationReason("Some input field reason.") :: Nil
+            // TODO: directive with deprecated here
+          )
+        ) :: Nil
+      )
     )
   )
 
@@ -57,6 +83,25 @@ class DocumentAnalyzerSpec extends AnyWordSpec with Matchers with StringMatchers
         .deprecatedUsages
         .map(_.errorMessage) should
         contain("The enum value 'Number.TWO' is deprecated. Some enum reason.")
+    }
+
+    "report usage of deprecated field args" in {
+      schema
+        .analyzer(gql"""{ fieldWithDeprecatedArg(deprecatedArg: "foo") }""")
+        .deprecatedUsages
+        .map(_.errorMessage) should
+        contain(
+          "The argument 'deprecatedArg' on 'Query.fieldWithDeprecatedArg' is deprecated. Some arg reason.")
+    }
+
+    "report usage of deprecated input object field args" in {
+      schema
+        .analyzer(
+          gql"""{ fieldWithInputObjectFieldDeprecated(input: { deprecatedField: "foo" }) }""")
+        .deprecatedUsages
+        .map(_.errorMessage) should
+        contain(
+          "The input field 'FooInput.deprecatedField' is deprecated. Some input field reason.")
     }
 
     "report usage of deprecated enums in variables" in {

@@ -9,6 +9,7 @@ case class InputObjectTypeDescription(description: String) extends DeriveInputOb
 
 case class DocumentInputField(fieldName: String, description: String)
     extends DeriveInputObjectSetting
+
 case class RenameInputField(fieldName: String, graphqlName: String) extends DeriveInputObjectSetting
 case class ReplaceInputField(fieldName: String, field: InputField[_])
     extends DeriveInputObjectSetting

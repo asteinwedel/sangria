@@ -708,6 +708,7 @@ trait InputValue[T] {
   def inputValueType: InputType[_]
   def description: Option[String]
   def defaultValue: Option[(_, ToInput[_, _])]
+  def deprecationReason: Option[String]
 }
 
 /** @param description
@@ -720,16 +721,21 @@ case class Argument[T](
     defaultValue: Option[(_, ToInput[_, _])],
     fromInput: FromInput[_],
     astDirectives: Vector[ast.Directive],
-    astNodes: Vector[ast.AstNode])
+    astNodes: Vector[ast.AstNode],
+    deprecationReason: Option[String])
     extends InputValue[T]
     with Named
-    with HasAstInfo {
+    with HasAstInfo
+    with HasDeprecation {
 
   def withDirective(directive: ast.Directive): Argument[T] =
     copy(astDirectives = astDirectives :+ directive)
 
   def withDirectives(directives: ast.Directive*): Argument[T] =
     copy(astDirectives = astDirectives ++ directives)
+
+  def withDeprecationReason(deprecationReason: String): Argument[T] =
+    copy(deprecationReason = Some(deprecationReason))
 
   override def inputValueType: InputType[_] = argumentType
   override def rename(newName: String): this.type = copy(name = newName).asInstanceOf[this.type]
@@ -741,10 +747,12 @@ object Argument {
       name: String,
       argumentType: InputType[T],
       description: String,
-      defaultValue: Default)(implicit
+      defaultValue: Default
+  )(implicit
       toInput: ToInput[Default, _],
       fromInput: FromInput[T],
-      res: ArgumentType[T]): Argument[res.Res] =
+      res: ArgumentType[T]
+  ): Argument[res.Res] =
     Argument(
       name,
       argumentType,
@@ -752,7 +760,8 @@ object Argument {
       Some(defaultValue -> toInput),
       fromInput,
       Vector.empty,
-      Vector.empty)
+      Vector.empty,
+      None)
 
   def apply[T, Default](name: String, argumentType: InputType[T], defaultValue: Default)(implicit
       toInput: ToInput[Default, _],
@@ -765,17 +774,29 @@ object Argument {
       Some(defaultValue -> toInput),
       fromInput,
       Vector.empty,
-      Vector.empty)
+      Vector.empty,
+      None
+    )
 
-  def apply[T](name: String, argumentType: InputType[T], description: String)(implicit
-      fromInput: FromInput[T],
-      res: WithoutInputTypeTags[T]): Argument[res.Res] =
-    Argument(name, argumentType, Some(description), None, fromInput, Vector.empty, Vector.empty)
+  def apply[T](
+      name: String,
+      argumentType: InputType[T],
+      description: String
+  )(implicit fromInput: FromInput[T], res: WithoutInputTypeTags[T]): Argument[res.Res] =
+    Argument(
+      name,
+      argumentType,
+      Some(description),
+      None,
+      fromInput,
+      Vector.empty,
+      Vector.empty,
+      None)
 
   def apply[T](name: String, argumentType: InputType[T])(implicit
       fromInput: FromInput[T],
       res: WithoutInputTypeTags[T]): Argument[res.Res] =
-    Argument(name, argumentType, None, None, fromInput, Vector.empty, Vector.empty)
+    Argument(name, argumentType, None, None, fromInput, Vector.empty, Vector.empty, None)
 
   def createWithoutDefault[T](
       name: String,
@@ -783,7 +804,7 @@ object Argument {
       description: Option[String])(implicit
       fromInput: FromInput[T],
       res: ArgumentType[T]): Argument[res.Res] =
-    Argument(name, argumentType, description, None, fromInput, Vector.empty, Vector.empty)
+    Argument(name, argumentType, description, None, fromInput, Vector.empty, Vector.empty, None)
 
   def createWithDefault[T, Default](
       name: String,
@@ -800,7 +821,8 @@ object Argument {
       Some(defaultValue -> toInput),
       fromInput,
       Vector.empty,
-      Vector.empty)
+      Vector.empty,
+      None)
 }
 
 trait WithoutInputTypeTags[T] {
@@ -1103,14 +1125,18 @@ case class InputField[T](
     description: Option[String],
     defaultValue: Option[(_, ToInput[_, _])],
     astDirectives: Vector[ast.Directive],
-    astNodes: Vector[ast.AstNode]
+    astNodes: Vector[ast.AstNode],
+    deprecationReason: Option[String]
 ) extends InputValue[T]
     with Named
-    with HasAstInfo {
+    with HasAstInfo
+    with HasDeprecation {
   def withDirective(directive: ast.Directive): InputField[T] =
     copy(astDirectives = astDirectives :+ directive)
   def withDirectives(directives: ast.Directive*): InputField[T] =
     copy(astDirectives = astDirectives ++ directives)
+  def withDeprecationReason(deprecationReason: String): InputField[T] =
+    copy(deprecationReason = Some(deprecationReason))
   def inputValueType: InputType[T] = fieldType
   def rename(newName: String): InputField.this.type = copy(name = newName).asInstanceOf[this.type]
   def toAst: ast.InputValueDefinition = SchemaRenderer.renderInputField(this)
@@ -1130,22 +1156,30 @@ object InputField {
       Some(description),
       Some(defaultValue -> toInput),
       Vector.empty,
-      Vector.empty).asInstanceOf[InputField[res.Res]]
+      Vector.empty,
+      None).asInstanceOf[InputField[res.Res]]
 
   def apply[T, Default](name: String, fieldType: InputType[T], defaultValue: Default)(implicit
       toInput: ToInput[Default, _],
       res: WithoutInputTypeTags[T]): InputField[res.Res] =
-    InputField(name, fieldType, None, Some(defaultValue -> toInput), Vector.empty, Vector.empty)
+    InputField(
+      name,
+      fieldType,
+      None,
+      Some(defaultValue -> toInput),
+      Vector.empty,
+      Vector.empty,
+      None)
       .asInstanceOf[InputField[res.Res]]
 
   def apply[T](name: String, fieldType: InputType[T], description: String)(implicit
       res: WithoutInputTypeTags[T]): InputField[res.Res] =
-    InputField(name, fieldType, Some(description), None, Vector.empty, Vector.empty)
+    InputField(name, fieldType, Some(description), None, Vector.empty, Vector.empty, None)
       .asInstanceOf[InputField[res.Res]]
 
   def apply[T](name: String, fieldType: InputType[T])(implicit
       res: WithoutInputTypeTags[T]): InputField[res.Res] =
-    InputField(name, fieldType, None, None, Vector.empty, Vector.empty)
+    InputField(name, fieldType, None, None, Vector.empty, Vector.empty, None)
       .asInstanceOf[InputField[res.Res]]
 
   def createFromMacroWithDefault[T, Default](
@@ -1160,13 +1194,14 @@ object InputField {
       description,
       Some(defaultValue -> toInput),
       Vector.empty,
-      Vector.empty).asInstanceOf[InputField[res.Res]]
+      Vector.empty,
+      None).asInstanceOf[InputField[res.Res]]
 
   def createFromMacroWithoutDefault[T](
       name: String,
       fieldType: InputType[T],
       description: Option[String])(implicit res: WithoutInputTypeTags[T]): InputField[res.Res] =
-    InputField(name, fieldType, description, None, Vector.empty, Vector.empty)
+    InputField(name, fieldType, description, None, Vector.empty, Vector.empty, None)
       .asInstanceOf[InputField[res.Res]]
 }
 
