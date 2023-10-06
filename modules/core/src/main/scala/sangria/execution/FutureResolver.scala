@@ -1,7 +1,7 @@
 package sangria.execution
 
 import sangria.ast
-import sangria.ast.{AstLocation, Document, SourceMapper}
+import sangria.ast.{AstLocation, Document, NullValue, SourceMapper}
 import sangria.execution.deferred.{Deferred, DeferredResolver}
 import sangria.marshalling.ResultMarshaller
 import sangria.schema._
@@ -1574,6 +1574,15 @@ private[execution] class FutureResolver[Ctx](
 
             if (allFields.exists(_.deprecationReason.isDefined))
               deprecationTracker.deprecatedFieldUsed(ctx)
+
+            field.arguments.foreach { argDef =>
+              val argValue = astField.arguments.find(_.name == argDef.name).map(_.value)
+
+              if (argDef.deprecationReason.isDefined && argValue.isDefined && !argValue.get
+                  .isInstanceOf[NullValue]) {
+                deprecationTracker.deprecatedFieldArgUsed(argDef, ctx)
+              }
+            }
 
             try {
               val mBefore = middleware.collect { case (mv, m: MiddlewareBeforeField[Ctx]) =>
