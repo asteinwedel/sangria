@@ -5,6 +5,10 @@ import sangria.schema._
 trait DeprecationTracker {
   def deprecatedFieldUsed[Ctx](ctx: Context[Ctx, _]): Unit
   def deprecatedEnumValueUsed[T, Ctx](`enum`: EnumType[T], value: T, userContext: Ctx): Unit
+  def deprecatedDirectiveArgUsed[Ctx](
+      directive: Directive,
+      argument: Argument[_],
+      ctx: Context[Ctx, _]): Unit
   def deprecatedInputObjectFieldUsed[T, Ctx](
       inputObject: InputObjectType[T],
       field: InputField[_],
@@ -23,6 +27,10 @@ object DeprecationTracker {
 object NilDeprecationTracker extends DeprecationTracker {
   def deprecatedFieldUsed[Ctx](ctx: Context[Ctx, _]) = ()
   def deprecatedEnumValueUsed[T, Ctx](`enum`: EnumType[T], value: T, userContext: Ctx) = ()
+  def deprecatedDirectiveArgUsed[Ctx](
+      directive: Directive,
+      argument: Argument[_],
+      ctx: Context[Ctx, _]) = ()
   def deprecatedInputObjectFieldUsed[T, Ctx](
       inputObject: InputObjectType[T],
       field: InputField[_],
@@ -40,6 +48,12 @@ class LoggingDeprecationTracker(logFn: String => Unit) extends DeprecationTracke
 
   def deprecatedEnumValueUsed[T, Ctx](`enum`: EnumType[T], value: T, userContext: Ctx) =
     logFn(s"Deprecated enum value '$value' used of enum '${`enum`.name}'.")
+
+  def deprecatedDirectiveArgUsed[Ctx](
+      directive: Directive,
+      argument: Argument[_],
+      ctx: Context[Ctx, _]) =
+    logFn(s"Deprecated argument '${argument.name}' used of directive '${directive.name}'.")
 
   def deprecatedInputObjectFieldUsed[T, Ctx](
       inputObject: InputObjectType[T],

@@ -1534,6 +1534,64 @@ private[execution] class FutureResolver[Ctx](
     Result(errorReg, if (canceled) None else Some(marshaller.arrayNode(listBuilder.result())))
   }
 
+  private def trackDeprecation(ctx: Context[Ctx, _]): Unit = {
+    def deprecatedArgsUsed(
+        argDefs: List[Argument[_]],
+        argValues: Vector[ast.Argument]): List[Argument[_]] =
+      argDefs.filter { argDef =>
+        println(s"looking for: ${argDef.name}: ${argValues.find(_.name == argDef.name)}")
+        argValues.find(_.name == argDef.name).map(_.value) match {
+          case None => false
+          case Some(_: NullValue) => false
+          case _ => argDef.deprecationReason.isDefined
+        }
+      }
+
+    val field = ctx.field
+    val astField = ctx.astFields.head
+
+    val allFields =
+      ctx.parentType.getField(ctx.schema, astField.name).asInstanceOf[Vector[Field[Ctx, Any]]]
+    if (allFields.exists(_.deprecationReason.isDefined))
+      deprecationTracker.deprecatedFieldUsed(ctx)
+
+    field.astDirectives.foreach { astDirective =>
+      println(s"LOOKING FOR: ${astDirective.name}")
+      ctx.schema.directives.find(_.name == astDirective.name) match {
+        case Some(directive) =>
+          println(s"FOUND: ${directive.name}")
+          println(deprecatedArgsUsed(directive.arguments, astDirective.arguments))
+          deprecatedArgsUsed(directive.arguments, astDirective.arguments).foreach { arg =>
+            deprecationTracker.deprecatedDirectiveArgUsed(directive, arg, ctx)
+          }
+        case _ => // do nothing
+      }
+    }
+
+    deprecatedArgsUsed(field.arguments, astField.arguments).foreach { arg =>
+      deprecationTracker.deprecatedFieldArgUsed(arg, ctx)
+    }
+
+    field.arguments.foreach { argDef =>
+      val argValue = astField.arguments.find(_.name == argDef.name).map(_.value)
+
+      (argDef.argumentType, argValue) match {
+        case (ioDef: InputObjectType[_], Some(ioArg: ObjectValue)) =>
+          ioDef.fields.foreach { field =>
+            if (field.deprecationReason.isDefined) {
+              ioArg.fieldsByName.get(field.name) match {
+                case None => // do nothing
+                case Some(_: NullValue) => // do nothing
+                case _ =>
+                  deprecationTracker.deprecatedInputObjectFieldUsed(ioDef, field, ctx)
+              }
+            }
+          }
+        case _ => // do nothing
+      }
+    }
+  }
+
   private def resolveField(
       userCtx: Ctx,
       tpe: ObjectType[Ctx, _],
@@ -1572,32 +1630,7 @@ private[execution] class FutureResolver[Ctx](
               deferredResolverState = deferredResolverState
             )
 
-            if (allFields.exists(_.deprecationReason.isDefined))
-              deprecationTracker.deprecatedFieldUsed(ctx)
-
-            field.arguments.foreach { argDef =>
-              val argValue = astField.arguments.find(_.name == argDef.name).map(_.value)
-
-              if (argDef.deprecationReason.isDefined && argValue.isDefined && !argValue.get
-                  .isInstanceOf[NullValue]) {
-                deprecationTracker.deprecatedFieldArgUsed(argDef, ctx)
-              }
-
-              (argDef.argumentType, argValue) match {
-                case (ioDef: InputObjectType[_], Some(ioArg: ObjectValue)) =>
-                  ioDef.fields.foreach { field =>
-                    if (field.deprecationReason.isDefined) {
-                      ioArg.fieldsByName.get(field.name) match {
-                        case None => // do nothing
-                        case Some(_: NullValue) => // do nothing
-                        case _ =>
-                          deprecationTracker.deprecatedInputObjectFieldUsed(ioDef, field, ctx)
-                      }
-                    }
-                  }
-                case _ => // do nothing
-              }
-            }
+            trackDeprecation(ctx)
 
             try {
               val mBefore = middleware.collect { case (mv, m: MiddlewareBeforeField[Ctx]) =>
