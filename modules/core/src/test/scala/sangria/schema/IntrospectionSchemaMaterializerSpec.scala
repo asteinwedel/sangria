@@ -454,53 +454,78 @@ class IntrospectionSchemaMaterializerSpec
               Field(
                 "foo",
                 fieldType = OptionType(StringType),
-                Some("This is a field with deprecated a deprecated arg"),
+                Some("This is a field with some deprecated args"),
                 resolve = _ => None,
                 arguments = List(
                   Argument(
                     "arg1",
                     IntType
                   ).withDeprecationReason("use arg2"),
-                  Argument("arg2", StringType, "defaultValue"))
+                  Argument("arg2", StringType),
+                  Argument(
+                    "additionalInput",
+                    InputObjectType(
+                      "SimpleInput",
+                      List(
+                        InputField("before", StringType).withDeprecationReason("use after"),
+                        InputField("after", IntType)
+                      ))
+                  )
+                )
               )
             )
-          ))
+          ),
+          directives = Directive(
+            "customDirective",
+            arguments = List(
+              Argument("deprecated", OptionInputType(IntType)).withDeprecationReason(
+                "use notDeprecated"),
+              Argument("notDeprecated", OptionInputType(StringType))
+            ),
+            locations =
+              Set(DirectiveLocation.ArgumentDefinition, DirectiveLocation.InputFieldDefinition)
+          ) :: Nil
+        )
       )
 
       withClue(serverSchema.renderPretty)(serverSchema.renderPretty.normalizeAllWS should be("""
       schema {
-           query: Simple
+        query: Simple
          }
 
-         enum Color {
-           "So rosy"
-           RED
+      enum Color {
+        "So rosy"
+        RED
 
-           "So grassy"
-           GREEN
+        "So grassy"
+        GREEN
 
-           "So calming"
-           BLUE
+        "So calming"
+        BLUE
 
-           "So sickening"
-           MAUVE @deprecated(reason: "No longer in fashion")
-         }
+        "So sickening"
+        MAUVE @deprecated(reason: "No longer in fashion")
+      }
 
-         "This is a simple type"
-         type Simple {
-           "This is a shiny string field"
-           shinyString: String
+      "This is a simple type"
+      type Simple {
+        "This is a shiny string field"
+        shinyString: String
 
-           "This is a deprecated string field"
-           deprecatedString: String @deprecated(reason: "Use shinyString")
-           color: Color
+        "This is a deprecated string field"
+        deprecatedString: String @deprecated(reason: "Use shinyString")
+        color: Color
 
-           "This is a field with deprecated a deprecated arg"
-           foo(arg1: Int! @deprecated(reason: "use arg2"),
+        "This is a field with some deprecated args"
+        foo(arg1: Int! @deprecated(reason: "use arg2"), arg2: String!, additionalInput: SimpleInput!): String
+      }
 
-             "defaultValue"
-             arg2: String!): String
-         } """.normalizeAllWS))
+      input SimpleInput {
+        before: String! @deprecated(reason: "use after")
+        after: Int!
+      }
+
+      directive @customDirective(deprecated: Int @deprecated(reason: "use notDeprecated"), notDeprecated: String) on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION """.normalizeAllWS))
     }
 
     "builds a schema with description" in testSchema(
