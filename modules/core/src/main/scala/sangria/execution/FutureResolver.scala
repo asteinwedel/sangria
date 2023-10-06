@@ -1566,6 +1566,21 @@ private[execution] class FutureResolver[Ctx, Input](
         argDef.deprecationReason.isDefined && argValue.isDefined && iu.isDefined(argValue.get)
       }
 
+    def trackDeprecatedDirectiveArgs(astDirective: ast.Directive): Unit =
+      ctx.schema.directives.find(_.name == astDirective.name) match {
+        case Some(directive) =>
+          val directiveArgs = getArgs(astDirective, astDirective.arguments, directive.arguments)
+          deprecatedArgsUsed(directive.arguments, directiveArgs).foreach { arg =>
+            deprecationTracker.deprecatedDirectiveArgUsed(directive, arg, ctx)
+          }
+
+          // nested argument directives
+          directive.arguments.foreach { nestedArg =>
+            nestedArg.astDirectives.foreach(trackDeprecatedDirectiveArgs)
+          }
+        case _ => // do nothing
+      }
+
     val field = ctx.field
     val astField = ctx.astFields.head
 
@@ -1577,14 +1592,7 @@ private[execution] class FutureResolver[Ctx, Input](
 
     // directive argument deprecation
     field.astDirectives.foreach { astDirective =>
-      ctx.schema.directives.find(_.name == astDirective.name) match {
-        case Some(directive) =>
-          val directiveArgs = getArgs(astDirective, astDirective.arguments, directive.arguments)
-          deprecatedArgsUsed(directive.arguments, directiveArgs).foreach { arg =>
-            deprecationTracker.deprecatedDirectiveArgUsed(directive, arg, ctx)
-          }
-        case _ => // do nothing
-      }
+      trackDeprecatedDirectiveArgs(astDirective)
     }
 
     // field argument deprecation
@@ -1592,19 +1600,26 @@ private[execution] class FutureResolver[Ctx, Input](
       deprecationTracker.deprecatedFieldArgUsed(arg, ctx)
     }
 
-    // input object field deprecation
     field.arguments.foreach { argDef =>
+      // argument directives args deprecation
+      argDef.astDirectives.foreach(trackDeprecatedDirectiveArgs)
+
+      // input object field deprecation
       val argValue = getArgValue(argDef.name, fieldArgs)
 
       (argDef.argumentType, argValue) match {
         case (ioDef: InputObjectType[_], Some(ioArg)) =>
           ioDef.fields.foreach { field =>
+            // field deprecation
             if (field.deprecationReason.isDefined && iu.isMapNode(ioArg)) {
               val fieldVal = iu.getMapValue(ioArg, field.name)
               if (fieldVal.isDefined && iu.isDefined(fieldVal.get)) {
                 deprecationTracker.deprecatedInputObjectFieldUsed(ioDef, field, ctx)
               }
             }
+
+            // field directive args deprection
+            field.astDirectives.foreach(trackDeprecatedDirectiveArgs)
           }
         case _ => // do nothing
       }
