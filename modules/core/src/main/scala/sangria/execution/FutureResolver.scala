@@ -1,7 +1,7 @@
 package sangria.execution
 
 import sangria.ast
-import sangria.ast.{AstLocation, Document, NullValue, SourceMapper}
+import sangria.ast.{AstLocation, Document, NullValue, ObjectValue, SourceMapper}
 import sangria.execution.deferred.{Deferred, DeferredResolver}
 import sangria.marshalling.ResultMarshaller
 import sangria.schema._
@@ -1581,6 +1581,21 @@ private[execution] class FutureResolver[Ctx](
               if (argDef.deprecationReason.isDefined && argValue.isDefined && !argValue.get
                   .isInstanceOf[NullValue]) {
                 deprecationTracker.deprecatedFieldArgUsed(argDef, ctx)
+              }
+
+              (argDef.argumentType, argValue) match {
+                case (ioDef: InputObjectType[_], Some(ioArg: ObjectValue)) =>
+                  ioDef.fields.foreach { field =>
+                    if (field.deprecationReason.isDefined) {
+                      ioArg.fieldsByName.get(field.name) match {
+                        case None => // do nothing
+                        case Some(_: NullValue) => // do nothing
+                        case _ =>
+                          deprecationTracker.deprecatedInputObjectFieldUsed(ioDef, field, ctx)
+                      }
+                    }
+                  }
+                case _ => // do nothing
               }
             }
 
