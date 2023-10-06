@@ -1552,14 +1552,6 @@ private[execution] class FutureResolver[Ctx, Input](
         None
       }
 
-    def getArgs(
-        astNode: ast.AstNode,
-        astArguments: Vector[ast.Argument],
-        argDefs: List[Argument[_]]): Args =
-      valueCollector
-        .getArgumentValues(Some(astNode), argDefs, astArguments, variables)
-        .get
-
     def deprecatedArgsUsed(argDefs: List[Argument[_]], argValues: Args): List[Argument[_]] =
       argDefs.filter { argDef =>
         val argValue = getArgValue(argDef.name, argValues)
@@ -1569,9 +1561,19 @@ private[execution] class FutureResolver[Ctx, Input](
     def trackDeprecatedDirectiveArgs(astDirective: ast.Directive): Unit =
       ctx.schema.directives.find(_.name == astDirective.name) match {
         case Some(directive) =>
-          val directiveArgs = getArgs(astDirective, astDirective.arguments, directive.arguments)
-          deprecatedArgsUsed(directive.arguments, directiveArgs).foreach { arg =>
-            deprecationTracker.deprecatedDirectiveArgUsed(directive, arg, ctx)
+          val directiveArgs = valueCollector
+            .getArgumentValues(
+              Some(astDirective),
+              directive.arguments,
+              astDirective.arguments,
+              variables)
+
+          directiveArgs match {
+            case Success(directiveArgs) =>
+              deprecatedArgsUsed(directive.arguments, directiveArgs).foreach { arg =>
+                deprecationTracker.deprecatedDirectiveArgUsed(directive, arg, ctx)
+              }
+            case _ => // if we fail to get args, the query should fail elsewhere
           }
 
           // nested argument directives
