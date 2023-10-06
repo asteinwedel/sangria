@@ -2,6 +2,7 @@ package sangria.execution
 
 import java.util.concurrent.atomic.AtomicInteger
 import sangria.parser.QueryParser
+import sangria.ast
 import sangria.schema._
 import sangria.util.{FutureResultSupport, OutputMatchers}
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -21,6 +22,13 @@ class DeprecationTrackerSpec
     var enumValue: Option[Any] = None
     var `enum`: Option[String] = None
 
+    var argument: Option[Argument[_]] = None
+
+    var inputObject: Option[InputObjectType[_]] = None
+    var inputField: Option[InputField[_]] = None
+
+    var directive: Option[Directive] = None
+
     def deprecatedFieldUsed[Ctx](ctx: Context[Ctx, _]) = {
       times.incrementAndGet()
 
@@ -31,6 +39,32 @@ class DeprecationTrackerSpec
       times.incrementAndGet()
       this.enumValue = Some(value)
       this.`enum` = Some(`enum`.name)
+    }
+
+    def deprecatedFieldArgUsed[Ctx](arg: Argument[_], ctx: Context[Ctx, _]) = {
+      times.incrementAndGet()
+      this.ctx = Some(ctx)
+      this.argument = Some(arg)
+    }
+
+    def deprecatedDirectiveArgUsed[Ctx](
+        directive: Directive,
+        arg: Argument[_],
+        ctx: Context[Ctx, _]) = {
+      times.incrementAndGet()
+      this.ctx = Some(ctx)
+      this.directive = Some(directive)
+      this.argument = Some(arg)
+    }
+
+    def deprecatedInputObjectFieldUsed[T, Ctx](
+        inputObject: InputObjectType[T],
+        field: InputField[_],
+        ctx: Context[Ctx, _]) = {
+      times.incrementAndGet()
+      this.ctx = Some(ctx)
+      this.inputObject = Some(inputObject)
+      this.inputField = Some(field)
     }
   }
 
@@ -80,6 +114,208 @@ class DeprecationTrackerSpec
       deprecationTracker.times.get should be(1)
       deprecationTracker.ctx.get.path.path should be(Vector("deprecated"))
       deprecationTracker.ctx.get.field.name should be("deprecated")
+    }
+
+    "not track non-deprecated fields args" in {
+      val testType = ObjectType(
+        "TestType",
+        fields[Unit, Unit](
+          Field(
+            "someField",
+            OptionType(StringType),
+            resolve = _ => None,
+            arguments = List(
+              Argument("deprecated", OptionInputType(IntType)).withDeprecationReason(
+                "use notDeprecated"),
+              Argument("notDeprecated", OptionInputType(IntType))
+            )
+          )
+        )
+      )
+
+      val schema = Schema(testType)
+      val Success(query) = QueryParser.parse("{ someField(notDeprecated: 123) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(0)
+      deprecationTracker.ctx should be(None)
+    }
+
+    "track deprecated fields args" in {
+      val testType = ObjectType(
+        "TestType",
+        fields[Unit, Unit](
+          Field(
+            "someField",
+            OptionType(StringType),
+            resolve = _ => None,
+            arguments = List(
+              Argument("deprecated", OptionInputType(IntType)).withDeprecationReason(
+                "use notDeprecated"),
+              Argument("notDeprecated", OptionInputType(IntType))
+            )
+          )
+        )
+      )
+
+      val schema = Schema(testType)
+      val Success(query) = QueryParser.parse("{ someField(deprecated: 123) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(1)
+      deprecationTracker.ctx.get.path.path should be(Vector("someField"))
+      deprecationTracker.ctx.get.field.name should be("someField")
+
+      deprecationTracker.argument.get.name should be("deprecated")
+    }
+
+    "not track non-deprecated input object fields" in {
+      val inputObject = InputObjectType(
+        "SomeFieldInput",
+        List(
+          InputField("deprecated", OptionInputType(IntType)).withDeprecationReason(
+            "use notDeprecated"),
+          InputField("notDeprecated", OptionInputType(IntType))
+        )
+      )
+
+      val testType = ObjectType(
+        "TestType",
+        fields[Unit, Unit](
+          Field(
+            "someField",
+            OptionType(StringType),
+            resolve = _ => None,
+            arguments = Argument("input", inputObject) :: Nil)
+        )
+      )
+
+      val schema = Schema(testType)
+      val Success(query) = QueryParser.parse("{ someField(input: { notDeprecated: 123}) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(0)
+      deprecationTracker.ctx should be(None)
+    }
+
+    "track deprecated input object fields" in {
+      val inputObject = InputObjectType(
+        "SomeFieldInput",
+        List(
+          InputField("deprecated", OptionInputType(IntType)).withDeprecationReason(
+            "use notDeprecated"),
+          InputField("notDeprecated", OptionInputType(IntType))
+        )
+      )
+
+      val testType = ObjectType(
+        "TestType",
+        fields[Unit, Unit](
+          Field(
+            "someField",
+            OptionType(StringType),
+            resolve = _ => None,
+            arguments = Argument("input", inputObject) :: Nil)
+        )
+      )
+
+      val schema = Schema(testType)
+      val Success(query) = QueryParser.parse("{ someField(input: { deprecated: 123}) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(1)
+      deprecationTracker.ctx.get.path.path should be(Vector("someField"))
+      deprecationTracker.ctx.get.field.name should be("someField")
+
+      deprecationTracker.inputObject.get.name should be("SomeFieldInput")
+      deprecationTracker.inputField.get.name should be("deprecated")
+    }
+
+    "not track non-deprecated directive args" in {
+      val directive = Directive(
+        "customDirective",
+        locations = Set(DirectiveLocation.ArgumentDefinition, DirectiveLocation.Field),
+        arguments = List(
+          Argument("deprecated", OptionInputType(IntType)).withDeprecationReason(
+            "use notDeprecated"),
+          Argument("notDeprecated", OptionInputType(IntType))
+        )
+      )
+
+      val testType = ObjectType(
+        "TestType",
+        fields[Unit, Unit](
+          Field(
+            "someField",
+            OptionType(StringType),
+            resolve = _ => None,
+            astDirectives = Vector(
+              ast.Directive(
+                "customDirective",
+                arguments = Vector(ast.Argument("notDeprecated", ast.IntValue(123)))))
+          )
+        )
+      )
+
+      val schema = Schema(testType, directives = directive :: Nil)
+      val Success(query) = QueryParser.parse("{ someField @customDirective(notDeprecated: 123) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(0)
+      deprecationTracker.ctx should be(None)
+    }
+
+    "track deprecated directive args" in {
+      // have the args have the same directive to detect infinite loops
+      val astDirective = ast.Directive(
+        "customDirective",
+        arguments = Vector(ast.Argument("deprecated", ast.IntValue(123))))
+
+      val directive = Directive(
+        "customDirective",
+        locations = Set(DirectiveLocation.ArgumentDefinition, DirectiveLocation.Field),
+        arguments = List(
+          Argument("deprecated", OptionInputType(IntType))
+            .withDeprecationReason("use notDeprecated")
+            .withDirective(astDirective),
+          Argument("notDeprecated", OptionInputType(IntType)).withDirective(astDirective)
+        )
+      )
+
+      val testType = ObjectType(
+        "TestType",
+        fields[Unit, Unit](
+          Field(
+            "someField",
+            OptionType(StringType),
+            resolve = _ => None,
+            astDirectives = Vector(astDirective)
+          )
+        )
+      )
+
+      val schema = Schema(testType, directives = directive :: Nil)
+      val Success(query) = QueryParser.parse("{ someField @customDirective(deprecated: 123) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(1)
+      deprecationTracker.ctx.get.path.path should be(Vector("someField"))
+      deprecationTracker.ctx.get.field.name should be("someField")
+
+      deprecationTracker.directive.get.name should be("customDirective")
+      deprecationTracker.argument.get.name should be("deprecated")
     }
 
     "provide context information" in {
