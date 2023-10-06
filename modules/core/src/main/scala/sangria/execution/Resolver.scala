@@ -3,13 +3,13 @@ package sangria.execution
 import sangria.ast
 import sangria.ast.SourceMapper
 import sangria.execution.deferred.{Deferred, DeferredResolver}
-import sangria.marshalling.{ResultMarshaller, ScalarValueInfo}
+import sangria.marshalling.{InputUnmarshaller, ResultMarshaller, ScalarValueInfo}
 import sangria.schema._
 
 import scala.concurrent.ExecutionContext
 
 private[execution] trait ResolverBuilder {
-  def build[Ctx](
+  def build[Ctx, Input](
       marshaller: ResultMarshaller,
       middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
       schema: Schema[Ctx, _],
@@ -29,7 +29,8 @@ private[execution] trait ResolverBuilder {
       queryReducerTiming: TimeMeasurement,
       queryAst: ast.Document
   )(implicit
-      executionContext: ExecutionContext
+      executionContext: ExecutionContext,
+      iu: InputUnmarshaller[Input]
   ): Resolver[Ctx]
 }
 

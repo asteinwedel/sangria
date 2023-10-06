@@ -1,9 +1,9 @@
 package sangria.execution
 
 import sangria.ast
-import sangria.ast.{AstLocation, Document, NullValue, ObjectValue, SourceMapper}
+import sangria.ast.{AstLocation, Document, SourceMapper}
 import sangria.execution.deferred.{Deferred, DeferredResolver}
-import sangria.marshalling.ResultMarshaller
+import sangria.marshalling.{InputUnmarshaller, ResultMarshaller}
 import sangria.schema._
 import sangria.streaming.SubscriptionStream
 
@@ -14,7 +14,7 @@ import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
 
 private[execution] object FutureResolverBuilder extends ResolverBuilder {
-  override def build[Ctx](
+  override def build[Ctx, Input](
       marshaller: ResultMarshaller,
       middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
       schema: Schema[Ctx, _],
@@ -32,8 +32,12 @@ private[execution] object FutureResolverBuilder extends ResolverBuilder {
       preserveOriginalErrors: Boolean,
       validationTiming: TimeMeasurement,
       queryReducerTiming: TimeMeasurement,
-      queryAst: Document)(implicit executionContext: ExecutionContext): Resolver[Ctx] =
-    new FutureResolver[Ctx](
+      queryAst: Document
+  )(implicit
+      executionContext: ExecutionContext,
+      iu: InputUnmarshaller[Input]
+  ): Resolver[Ctx] =
+    new FutureResolver[Ctx, Input](
       marshaller,
       middlewareCtx,
       schema,
@@ -58,7 +62,7 @@ private[execution] object FutureResolverBuilder extends ResolverBuilder {
 /** [[Resolver]] using [[scala.concurrent.Future]] and [[scala.concurrent.Promise]] as base
   * asynchronous primitives
   */
-private[execution] class FutureResolver[Ctx](
+private[execution] class FutureResolver[Ctx, Input](
     val marshaller: ResultMarshaller,
     middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
     schema: Schema[Ctx, _],
@@ -77,7 +81,7 @@ private[execution] class FutureResolver[Ctx](
     validationTiming: TimeMeasurement,
     queryReducerTiming: TimeMeasurement,
     queryAst: ast.Document
-)(implicit executionContext: ExecutionContext)
+)(implicit executionContext: ExecutionContext, iu: InputUnmarshaller[Input])
     extends Resolver[Ctx] {
   private val resultResolver =
     new ResultResolver(marshaller, exceptionHandler, preserveOriginalErrors)
@@ -1535,55 +1539,70 @@ private[execution] class FutureResolver[Ctx](
   }
 
   private def trackDeprecation(ctx: Context[Ctx, _]): Unit = {
-    def deprecatedArgsUsed(
-        argDefs: List[Argument[_]],
-        argValues: Vector[ast.Argument]): List[Argument[_]] =
-      argDefs.filter { argDef =>
-        println(s"looking for: ${argDef.name}: ${argValues.find(_.name == argDef.name)}")
-        argValues.find(_.name == argDef.name).map(_.value) match {
-          case None => false
-          case Some(_: NullValue) => false
-          case _ => argDef.deprecationReason.isDefined
+    val fieldArgs = ctx.args
+
+    def getArgValue(name: String, args: Args): Option[Input] =
+      if (args.argDefinedInQuery(name)) {
+        if (args.optionalArgs.contains(name)) {
+          args.argOpt(name)
+        } else {
+          Some(args.arg(name))
         }
+      } else {
+        None
+      }
+
+    def getArgs(
+        astNode: ast.AstNode,
+        astArguments: Vector[ast.Argument],
+        argDefs: List[Argument[_]]): Args =
+      valueCollector
+        .getArgumentValues(Some(astNode), argDefs, astArguments, variables)
+        .get
+
+    def deprecatedArgsUsed(argDefs: List[Argument[_]], argValues: Args): List[Argument[_]] =
+      argDefs.filter { argDef =>
+        val argValue = getArgValue(argDef.name, argValues)
+        argDef.deprecationReason.isDefined && argValue.isDefined && iu.isDefined(argValue.get)
       }
 
     val field = ctx.field
     val astField = ctx.astFields.head
 
+    // field deprecation
     val allFields =
       ctx.parentType.getField(ctx.schema, astField.name).asInstanceOf[Vector[Field[Ctx, Any]]]
     if (allFields.exists(_.deprecationReason.isDefined))
       deprecationTracker.deprecatedFieldUsed(ctx)
 
+    // directive argument deprecation
     field.astDirectives.foreach { astDirective =>
-      println(s"LOOKING FOR: ${astDirective.name}")
       ctx.schema.directives.find(_.name == astDirective.name) match {
         case Some(directive) =>
-          println(s"FOUND: ${directive.name}")
-          println(deprecatedArgsUsed(directive.arguments, astDirective.arguments))
-          deprecatedArgsUsed(directive.arguments, astDirective.arguments).foreach { arg =>
+          val directiveArgs = getArgs(astDirective, astDirective.arguments, directive.arguments)
+          deprecatedArgsUsed(directive.arguments, directiveArgs).foreach { arg =>
             deprecationTracker.deprecatedDirectiveArgUsed(directive, arg, ctx)
           }
         case _ => // do nothing
       }
     }
 
-    deprecatedArgsUsed(field.arguments, astField.arguments).foreach { arg =>
+    // field argument deprecation
+    deprecatedArgsUsed(field.arguments, fieldArgs).foreach { arg =>
       deprecationTracker.deprecatedFieldArgUsed(arg, ctx)
     }
 
+    // input object field deprecation
     field.arguments.foreach { argDef =>
-      val argValue = astField.arguments.find(_.name == argDef.name).map(_.value)
+      val argValue = getArgValue(argDef.name, fieldArgs)
 
       (argDef.argumentType, argValue) match {
-        case (ioDef: InputObjectType[_], Some(ioArg: ObjectValue)) =>
+        case (ioDef: InputObjectType[_], Some(ioArg)) =>
           ioDef.fields.foreach { field =>
-            if (field.deprecationReason.isDefined) {
-              ioArg.fieldsByName.get(field.name) match {
-                case None => // do nothing
-                case Some(_: NullValue) => // do nothing
-                case _ =>
-                  deprecationTracker.deprecatedInputObjectFieldUsed(ioDef, field, ctx)
+            if (field.deprecationReason.isDefined && iu.isMapNode(ioArg)) {
+              val fieldVal = iu.getMapValue(ioArg, field.name)
+              if (fieldVal.isDefined && iu.isDefined(fieldVal.get)) {
+                deprecationTracker.deprecatedInputObjectFieldUsed(ioDef, field, ctx)
               }
             }
           }

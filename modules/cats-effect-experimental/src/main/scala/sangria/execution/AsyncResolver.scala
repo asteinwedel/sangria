@@ -5,7 +5,7 @@ import sangria.ast
 import sangria.ast.{Document, SourceMapper}
 import sangria.catseffect.schema.AsyncValue
 import sangria.execution.deferred.DeferredResolver
-import sangria.marshalling.ResultMarshaller
+import sangria.marshalling.{InputUnmarshaller, ResultMarshaller}
 import sangria.schema._
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -19,7 +19,7 @@ trait AsyncToFuture[F[_]] {
 
 private[execution] class AsyncResolverBuilder[F[_]: Async](asyncToFuture: AsyncToFuture[F])
     extends ResolverBuilder {
-  override def build[Ctx](
+  override def build[Ctx, Input](
       marshaller: ResultMarshaller,
       middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
       schema: Schema[Ctx, _],
@@ -37,8 +37,10 @@ private[execution] class AsyncResolverBuilder[F[_]: Async](asyncToFuture: AsyncT
       preserveOriginalErrors: Boolean,
       validationTiming: TimeMeasurement,
       queryReducerTiming: TimeMeasurement,
-      queryAst: Document)(implicit executionContext: ExecutionContext): Resolver[Ctx] =
-    new AsyncResolver[Ctx, F](
+      queryAst: Document)(implicit
+      executionContext: ExecutionContext,
+      iu: InputUnmarshaller[Input]): Resolver[Ctx] =
+    new AsyncResolver[Ctx, Input, F](
       marshaller,
       middlewareCtx,
       schema,
@@ -66,7 +68,7 @@ private[execution] class AsyncResolverBuilder[F[_]: Async](asyncToFuture: AsyncT
   * For now, it's using the [[FutureResolver]] under the hood. Later, we can update its
   * implementation to avoid using any [[Future]].
   */
-private[execution] class AsyncResolver[Ctx, F[_]: Async](
+private[execution] class AsyncResolver[Ctx, Input, F[_]: Async](
     val marshaller: ResultMarshaller,
     middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
     schema: Schema[Ctx, _],
@@ -86,12 +88,12 @@ private[execution] class AsyncResolver[Ctx, F[_]: Async](
     queryReducerTiming: TimeMeasurement,
     queryAst: ast.Document,
     asyncToFuture: AsyncToFuture[F]
-)(implicit executionContext: ExecutionContext)
+)(implicit executionContext: ExecutionContext, iu: InputUnmarshaller[Input])
     extends Resolver[Ctx] {
 
   private val asyncF: Async[F] = Async[F]
 
-  private val delegate = new FutureResolver[Ctx](
+  private val delegate = new FutureResolver[Ctx, Input](
     marshaller,
     middlewareCtx,
     schema,
