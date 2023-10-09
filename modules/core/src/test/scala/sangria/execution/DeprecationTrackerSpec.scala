@@ -276,13 +276,19 @@ class DeprecationTrackerSpec
     }
 
     "track deprecated directive args" in {
+      // have the args have the same directive to detect infinite loops
+      val astDirective = ast.Directive(
+        "customDirective",
+        arguments = Vector(ast.Argument("deprecated", ast.IntValue(123))))
+
       val directive = Directive(
         "customDirective",
         locations = Set(DirectiveLocation.ArgumentDefinition, DirectiveLocation.Field),
         arguments = List(
-          Argument("deprecated", OptionInputType(IntType)).withDeprecationReason(
-            "use notDeprecated"),
-          Argument("notDeprecated", OptionInputType(IntType))
+          Argument("deprecated", OptionInputType(IntType))
+            .withDeprecationReason("use notDeprecated")
+            .withDirective(astDirective),
+          Argument("notDeprecated", OptionInputType(IntType)).withDirective(astDirective)
         )
       )
 
@@ -293,11 +299,7 @@ class DeprecationTrackerSpec
             "someField",
             OptionType(StringType),
             resolve = _ => None,
-            astDirectives = Vector(
-              ast.Directive(
-                "customDirective",
-                arguments = Vector(ast.Argument("deprecated", ast.IntValue(123))))
-            )
+            astDirectives = Vector(astDirective)
           )
         )
       )

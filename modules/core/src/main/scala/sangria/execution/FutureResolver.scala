@@ -9,6 +9,7 @@ import sangria.streaming.SubscriptionStream
 
 import scala.annotation.tailrec
 import scala.collection.immutable.VectorBuilder
+import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
@@ -1540,6 +1541,7 @@ private[execution] class FutureResolver[Ctx, Input](
 
   private def trackDeprecation(ctx: Context[Ctx, _]): Unit = {
     val fieldArgs = ctx.args
+    var visitedDirectives = mutable.Set[String]()
 
     def getArgValue(name: String, args: Args): Option[Input] =
       if (args.argDefinedInQuery(name)) {
@@ -1558,7 +1560,13 @@ private[execution] class FutureResolver[Ctx, Input](
         argDef.deprecationReason.isDefined && argValue.isDefined && iu.isDefined(argValue.get)
       }
 
-    def trackDeprecatedDirectiveArgs(astDirective: ast.Directive): Unit =
+    def trackDeprecatedDirectiveArgs(astDirective: ast.Directive): Unit = {
+      // prevent infinite loop from directiveA -> arg -> directiveA -> arg ...
+      if (visitedDirectives.contains(astDirective.name)) {
+        return
+      }
+      visitedDirectives.add(astDirective.name)
+
       ctx.schema.directives.find(_.name == astDirective.name) match {
         case Some(directive) =>
           val directiveArgs = valueCollector
@@ -1582,6 +1590,7 @@ private[execution] class FutureResolver[Ctx, Input](
           }
         case _ => // do nothing
       }
+    }
 
     val field = ctx.field
     val astField = ctx.astFields.head
@@ -1620,7 +1629,7 @@ private[execution] class FutureResolver[Ctx, Input](
               }
             }
 
-            // field directive args deprection
+            // field directive args deprecation
             field.astDirectives.foreach(trackDeprecatedDirectiveArgs)
           }
         case _ => // do nothing
