@@ -475,7 +475,7 @@ class IntrospectionSchemaMaterializerSpec
               )
             )
           ),
-          directives = Directive(
+          directives = BuiltinDirectives :+ Directive(
             "customDirective",
             arguments = List(
               Argument("deprecated", OptionInputType(IntType)).withDeprecationReason(
@@ -484,7 +484,7 @@ class IntrospectionSchemaMaterializerSpec
             ),
             locations =
               Set(DirectiveLocation.ArgumentDefinition, DirectiveLocation.InputFieldDefinition)
-          ) :: Nil
+          )
         )
       )
 
