@@ -1541,7 +1541,7 @@ private[execution] class FutureResolver[Ctx, Input](
 
   private def trackDeprecation(ctx: Context[Ctx, _]): Unit = {
     val fieldArgs = ctx.args
-    var visitedDirectives = mutable.Set[String]()
+    val visitedDirectives = mutable.Set[String]()
 
     def getArgValue(name: String, args: Args): Option[Input] =
       if (args.argDefinedInQuery(name)) {
@@ -1602,9 +1602,7 @@ private[execution] class FutureResolver[Ctx, Input](
       deprecationTracker.deprecatedFieldUsed(ctx)
 
     // directive argument deprecation
-    field.astDirectives.foreach { astDirective =>
-      trackDeprecatedDirectiveArgs(astDirective)
-    }
+    field.astDirectives.foreach(trackDeprecatedDirectiveArgs)
 
     // field argument deprecation
     deprecatedArgsUsed(field.arguments, fieldArgs).foreach { arg =>
