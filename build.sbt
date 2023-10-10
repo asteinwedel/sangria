@@ -116,7 +116,40 @@ lazy val core = project
       ProblemFilters.exclude[DirectMissingMethodProblem](
         "sangria.validation.RuleBasedQueryValidator.validateQuery"),
       ProblemFilters.exclude[DirectMissingMethodProblem](
-        "sangria.validation.ValidationContext.this")
+        "sangria.validation.ValidationContext.this"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.execution.DeprecationTracker.deprecatedDirectiveArgUsed"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.execution.DeprecationTracker.deprecatedInputObjectFieldUsed"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.execution.DeprecationTracker.deprecatedFieldArgUsed"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.IntrospectionInputValue.apply"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.IntrospectionInputValue.copy"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.IntrospectionInputValue.this"),
+      ProblemFilters.exclude[MissingTypesProblem]("sangria.introspection.IntrospectionInputValue$"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.IntrospectionInputValue.apply"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.package.introspectionQueryString"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.package.introspectionQuery"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.package.introspectionQuery"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "sangria.introspection.package.introspectionQueryString"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.Argument.apply"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.Argument.copy"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.Argument.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.Argument.apply"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.InputField.apply"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.InputField.copy"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.InputField.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.InputField.apply"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.schema.InputValue.deprecationReason")
     ),
     Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oF"),
     libraryDependencies ++= Seq(
