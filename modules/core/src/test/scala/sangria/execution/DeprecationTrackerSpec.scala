@@ -3,6 +3,7 @@ package sangria.execution
 import java.util.concurrent.atomic.AtomicInteger
 import sangria.parser.QueryParser
 import sangria.ast
+import sangria.macros._
 import sangria.schema._
 import sangria.util.{FutureResultSupport, OutputMatchers}
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -227,6 +228,74 @@ class DeprecationTrackerSpec
 
       val schema = Schema(testType)
       val Success(query) = QueryParser.parse("{ someField(input: { deprecated: 123}) }")
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(1)
+      deprecationTracker.ctx.get.path.path should be(Vector("someField"))
+      deprecationTracker.ctx.get.field.name should be("someField")
+
+      deprecationTracker.inputObject.get.name should be("SomeFieldInput")
+      deprecationTracker.inputField.get.name should be("deprecated")
+    }
+
+    "track nested deprecated input object fields" in {
+      val schemaAst = gql"""
+      input SomeFieldInput {
+        deprecated: Int @deprecated(reason: "use notDeprecated")
+        notDeprecated: Int
+        nestedInput: SomeFieldInput
+      }
+
+      type Query {
+        someField(input: SomeFieldInput!): String
+      }
+      """
+
+      val schema = Schema.buildFromAst[Unit](schemaAst, AstSchemaBuilder.default)
+
+      val query = gql"""{
+        someField(
+          input: {
+            notDeprecated: 123,
+            nestedInput: {
+              deprecated: 123
+            }
+          }
+        )
+      }"""
+      val deprecationTracker = new RecordingDeprecationTracker
+
+      Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
+
+      deprecationTracker.times.get should be(1)
+      deprecationTracker.ctx.get.path.path should be(Vector("someField"))
+      deprecationTracker.ctx.get.field.name should be("someField")
+
+      deprecationTracker.inputObject.get.name should be("SomeFieldInput")
+      deprecationTracker.inputField.get.name should be("deprecated")
+    }
+
+    "track deprecated input object fields in a list" in {
+      val schemaAst = gql"""
+      input SomeFieldInput {
+        deprecated: Int @deprecated(reason: "use notDeprecated")
+        notDeprecated: Int
+      }
+
+      type Query {
+        someField(input: [SomeFieldInput]): String
+      }
+      """
+
+      val schema = Schema.buildFromAst[Unit](schemaAst, AstSchemaBuilder.default)
+
+      val query = gql"""{
+        someField(
+          input: [{ notDeprecated: 123 }, { deprecated: 123 }]
+        )
+      }"""
       val deprecationTracker = new RecordingDeprecationTracker
 
       Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
