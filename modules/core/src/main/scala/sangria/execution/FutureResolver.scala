@@ -3,7 +3,7 @@ package sangria.execution
 import sangria.ast
 import sangria.ast.{AstLocation, Document, SourceMapper}
 import sangria.execution.deferred.{Deferred, DeferredResolver}
-import sangria.marshalling.{InputUnmarshaller, ResultMarshaller}
+import sangria.marshalling.ResultMarshaller
 import sangria.schema._
 import sangria.streaming.SubscriptionStream
 
@@ -15,7 +15,7 @@ import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
 
 private[execution] object FutureResolverBuilder extends ResolverBuilder {
-  override def build[Ctx, Input](
+  override def build[Ctx](
       marshaller: ResultMarshaller,
       middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
       schema: Schema[Ctx, _],
@@ -33,12 +33,8 @@ private[execution] object FutureResolverBuilder extends ResolverBuilder {
       preserveOriginalErrors: Boolean,
       validationTiming: TimeMeasurement,
       queryReducerTiming: TimeMeasurement,
-      queryAst: Document
-  )(implicit
-      executionContext: ExecutionContext,
-      iu: InputUnmarshaller[Input]
-  ): Resolver[Ctx] =
-    new FutureResolver[Ctx, Input](
+      queryAst: Document)(implicit executionContext: ExecutionContext): Resolver[Ctx] =
+    new FutureResolver[Ctx](
       marshaller,
       middlewareCtx,
       schema,
@@ -63,7 +59,7 @@ private[execution] object FutureResolverBuilder extends ResolverBuilder {
 /** [[Resolver]] using [[scala.concurrent.Future]] and [[scala.concurrent.Promise]] as base
   * asynchronous primitives
   */
-private[execution] class FutureResolver[Ctx, Input](
+private[execution] class FutureResolver[Ctx](
     val marshaller: ResultMarshaller,
     middlewareCtx: MiddlewareQueryContext[Ctx, _, _],
     schema: Schema[Ctx, _],
@@ -82,7 +78,7 @@ private[execution] class FutureResolver[Ctx, Input](
     validationTiming: TimeMeasurement,
     queryReducerTiming: TimeMeasurement,
     queryAst: ast.Document
-)(implicit executionContext: ExecutionContext, iu: InputUnmarshaller[Input])
+)(implicit executionContext: ExecutionContext)
     extends Resolver[Ctx] {
   private val resultResolver =
     new ResultResolver(marshaller, exceptionHandler, preserveOriginalErrors)
@@ -1543,7 +1539,7 @@ private[execution] class FutureResolver[Ctx, Input](
     val fieldArgs = ctx.args
     val visitedDirectives = mutable.Set[ast.Directive]()
 
-    def getArgValue(name: String, args: Args): Option[Input] =
+    def getArgValue(name: String, args: Args): Option[_] =
       if (args.argDefinedInQuery(name)) {
         if (args.optionalArgs.contains(name)) {
           args.argOpt(name)
@@ -1557,7 +1553,7 @@ private[execution] class FutureResolver[Ctx, Input](
     def deprecatedArgsUsed(argDefs: List[Argument[_]], argValues: Args): List[Argument[_]] =
       argDefs.filter { argDef =>
         val argValue = getArgValue(argDef.name, argValues)
-        argDef.deprecationReason.isDefined && argValue.isDefined && iu.isDefined(argValue.get)
+        argDef.deprecationReason.isDefined && argValue.isDefined
       }
 
     def trackDeprecatedDirectiveArgs(astDirective: ast.Directive): Unit = {
@@ -1592,26 +1588,16 @@ private[execution] class FutureResolver[Ctx, Input](
       }
     }
 
-    def trackDeprecatedInputObjectFields(inputType: InputType[_], ioArg: Input): Unit =
+    def trackDeprecatedInputObjectFields(inputType: InputType[_], ioArg: Any): Unit =
       inputType match {
         case ioDef: InputObjectType[_] =>
           ioDef.fields.foreach { field =>
             // field deprecation
-            val fieldVal: Option[Input] = (ioArg match {
-              case lm: ListMap[String, Input] => lm.get(field.name)
-              case in: Input =>
-                try
-                  if (iu.isMapNode(in)) {
-                    val inputVal = iu.getMapValue(in, field.name)
-                    Option.when(inputVal.isDefined && iu.isDefined(inputVal.get))(inputVal.get)
-                  } else {
-                    None
-                  }
-                catch {
-                  case _: Throwable => None
-                }
+            val fieldVal: Option[_] = (ioArg match {
+              case lm: ListMap[String, _] => lm.get(field.name)
+              case _ => None
             }) match {
-              case Some(Some(nested: Input)) => Some(nested)
+              case Some(Some(nested)) => Some(nested)
               case value => value
             }
 
@@ -1627,19 +1613,13 @@ private[execution] class FutureResolver[Ctx, Input](
           }
         case OptionInputType(ofType) =>
           ioArg match {
-            case Some(ioArg: Input) => trackDeprecatedInputObjectFields(ofType, ioArg)
+            case Some(ioArg) => trackDeprecatedInputObjectFields(ofType, ioArg)
             case _ => trackDeprecatedInputObjectFields(ofType, ioArg)
           }
         case ListInputType(ofType) =>
           ioArg match {
-            case seq: Seq[Input] => seq.foreach(trackDeprecatedInputObjectFields(ofType, _))
-            case in: Input =>
-              try
-                if (iu.isListNode(in))
-                  iu.getListValue(in).foreach(trackDeprecatedInputObjectFields(ofType, _))
-              catch {
-                case _: Throwable => // do nothing
-              }
+            case seq: Seq[_] => seq.foreach(trackDeprecatedInputObjectFields(ofType, _))
+            case _ => // do nothing
           }
         case _ => // do nothing
       }

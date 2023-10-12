@@ -254,7 +254,7 @@ case class Executor[Ctx, Root](
       val middlewareVal = middleware.map(m => m.beforeQuery(middlewareCtx) -> m)
       val deferredResolverState = deferredResolver.initialQueryState
 
-      val resolver = scheme.resolverBuilder.build[Ctx, Input](
+      val resolver = scheme.resolverBuilder.build[Ctx](
         marshaller,
         middlewareCtx,
         schema,
@@ -273,7 +273,7 @@ case class Executor[Ctx, Root](
         validationTiming,
         queryReducerTiming,
         queryAst
-      )(executionContext, inputUnmarshaller)
+      )
 
       val result =
         operation.operationType match {
