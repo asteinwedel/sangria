@@ -348,6 +348,10 @@ class DeprecationTrackerSpec
       // have the args have the same directive to detect infinite loops
       val astDirective = ast.Directive(
         "customDirective",
+        arguments = Vector(ast.Argument("notDeprecated", ast.IntValue(123))))
+
+      val astDirectiveWithDeprecated = ast.Directive(
+        "customDirective",
         arguments = Vector(ast.Argument("deprecated", ast.IntValue(123))))
 
       val directive = Directive(
@@ -365,23 +369,30 @@ class DeprecationTrackerSpec
         "TestType",
         fields[Unit, Unit](
           Field(
-            "someField",
+            "fooField",
             OptionType(StringType),
             resolve = _ => None,
             astDirectives = Vector(astDirective)
+          ),
+          Field(
+            "barField",
+            OptionType(StringType),
+            resolve = _ => None,
+            astDirectives = Vector(astDirectiveWithDeprecated)
           )
         )
       )
 
       val schema = Schema(testType, directives = directive :: Nil)
-      val Success(query) = QueryParser.parse("{ someField @customDirective(deprecated: 123) }")
+      val Success(query) = QueryParser.parse(
+        "{ fooField @customDirective(notDeprecated: 123) barField @customDirective(deprecated: 123) }")
       val deprecationTracker = new RecordingDeprecationTracker
 
       Executor.execute(schema, query, deprecationTracker = deprecationTracker).await
 
       deprecationTracker.times.get should be(1)
-      deprecationTracker.ctx.get.path.path should be(Vector("someField"))
-      deprecationTracker.ctx.get.field.name should be("someField")
+      deprecationTracker.ctx.get.path.path should be(Vector("barField"))
+      deprecationTracker.ctx.get.field.name should be("barField")
 
       deprecationTracker.directive.get.name should be("customDirective")
       deprecationTracker.argument.get.name should be("deprecated")

@@ -1537,7 +1537,7 @@ private[execution] class FutureResolver[Ctx](
 
   private def trackDeprecation(ctx: Context[Ctx, _]): Unit = {
     val fieldArgs = ctx.args
-    val visitedDirectives = mutable.Set[ast.Directive]()
+    val visitedDirectives = mutable.Set[String]()
 
     def getArgValue(name: String, args: Args): Option[_] =
       if (args.argDefinedInQuery(name)) {
@@ -1558,10 +1558,10 @@ private[execution] class FutureResolver[Ctx](
 
     def trackDeprecatedDirectiveArgs(astDirective: ast.Directive): Unit = {
       // prevent infinite loop from directiveA -> arg -> directiveA -> arg ...
-      if (visitedDirectives.contains(astDirective)) {
+      if (visitedDirectives.contains(astDirective.name)) {
         return
       }
-      visitedDirectives.add(astDirective)
+      visitedDirectives.add(astDirective.name)
 
       ctx.schema.directives.find(_.name == astDirective.name) match {
         case Some(directive) =>
