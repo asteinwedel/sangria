@@ -149,7 +149,13 @@ lazy val core = project
       ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.InputField.this"),
       ProblemFilters.exclude[DirectMissingMethodProblem]("sangria.schema.InputField.apply"),
       ProblemFilters.exclude[ReversedMissingMethodProblem](
-        "sangria.schema.InputValue.deprecationReason")
+        "sangria.schema.InputValue.deprecationReason"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.execution.DeprecationTracker.deprecatedDirectiveArgUsed"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.execution.DeprecationTracker.deprecatedInputObjectFieldUsed"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem](
+        "sangria.execution.DeprecationTracker.deprecatedFieldArgUsed")
     ),
     Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oF"),
     libraryDependencies ++= Seq(
