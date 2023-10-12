@@ -27,7 +27,10 @@ private[execution] trait ResolverBuilder {
       preserveOriginalErrors: Boolean,
       validationTiming: TimeMeasurement,
       queryReducerTiming: TimeMeasurement,
-      queryAst: ast.Document)(implicit executionContext: ExecutionContext): Resolver[Ctx]
+      queryAst: ast.Document
+  )(implicit
+      executionContext: ExecutionContext
+  ): Resolver[Ctx]
 }
 
 private[execution] trait Resolver[Ctx] {
