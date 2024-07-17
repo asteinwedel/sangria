@@ -274,72 +274,6 @@ class AstSchemaMaterializer[Ctx] private (
     }
   }
 
-  def validateOneOfTypeDefs: Vector[Violation] = {
-    def validateFields(typeName: String, fields: Vector[ast.InputValueDefinition]) =
-      fields.flatMap { field =>
-        val defaultValueError = field.defaultValue.map(_ =>
-          OneOfDefaultValueField(
-            field.name,
-            typeName,
-            document.sourceMapper,
-            field.location.toList))
-
-        val nonOptionalError = field.valueType match {
-          case ast.NotNullType(_, _) =>
-            Some(
-              OneOfMandatoryField(
-                field.name,
-                typeName,
-                document.sourceMapper,
-                field.location.toList
-              )
-            )
-          case _ => None
-        }
-        Vector(defaultValueError, nonOptionalError).flatten
-      }
-
-    val violations = Vector(
-      typeDefs.flatMap {
-        case input: ast.InputObjectTypeDefinition if input.directives.contains(OneOfDirective) =>
-          validateFields(input.name, input.fields)
-        case _ => None
-      },
-      inputObjectTypeExtensionDefs.flatMap {
-        case ext: ast.InputObjectTypeExtensionDefinition =>
-          val extHasOneOf = ext.directives.contains(OneOfDirective)
-
-          val initial = typeDefs
-            .find {
-              case initial: ast.InputObjectTypeDefinition if initial.name == ext.name => true
-              case _ => false
-            }
-            .map(_.asInstanceOf[ast.InputObjectTypeDefinition])
-
-          val (initialHasOneOf, initialLocation) = initial match {
-            case Some(initial) =>
-              (initial.directives.contains(OneOfDirective), initial.location)
-            case _ => (false, None)
-          }
-
-          (extHasOneOf, initialHasOneOf) match {
-            case (true, true) => validateFields(ext.name, ext.fields)
-            case (false, false) => None
-            case _ =>
-              Some(
-                OneOfExtensionDirectiveMismatch(
-                  ext.name,
-                  document.sourceMapper,
-                  List(initialLocation, ext.location).flatten)
-              )
-          }
-        case _ => None
-      }
-    ).flatten
-
-    violations
-  }
-
   def validateDefinitions: Vector[Violation] = {
     val nestedErrors = Vector(
       typeDefsMap.find(_._2.size > 1).toVector.map { case (name, defs) =>
@@ -354,7 +288,6 @@ class AstSchemaMaterializer[Ctx] private (
           document.sourceMapper,
           defs.flatMap(_.location).toList)
       },
-      validateOneOfTypeDefs,
       objectTypeExtensionDefs.flatMap(
         validateExtensionsAst[ObjectType[_, _], ast.ObjectTypeDefinition](_, "object")),
       interfaceTypeExtensionDefs.flatMap(

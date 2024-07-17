@@ -1132,15 +1132,6 @@ case class OneOfDefaultValueField(
     s"oneOf input field '${typeName}.${fieldName}' cannot have a default value."
 }
 
-case class OneOfExtensionDirectiveMismatch(
-    typeName: String,
-    sourceMapper: Option[SourceMapper],
-    locations: List[AstLocation]
-) extends AstNodeViolation {
-  lazy val simpleErrorMessage =
-    s"The oneOf directive must be applied to all definitions and extensions for type ${typeName}."
-}
-
 case class NonUniqueTypeDefinitionViolation(
     typeName: String,
     sourceMapper: Option[SourceMapper],
