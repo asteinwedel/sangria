@@ -160,8 +160,8 @@ object ValueCollector {
 
           implicit val um = sangria.marshalling.queryAst.queryAstInputUnmarshaller
 
-          try
-            resolveMapValue(
+          try {
+            val arg = resolveMapValue(
               argDef.argumentType,
               argPath,
               argDef.defaultValue,
@@ -190,7 +190,41 @@ object ValueCollector {
                   fromScalarMiddleware = fromScalarMiddleware,
                   isArgument = true))
             )
-          catch {
+
+            argDef.argumentType.namedType match {
+              case InputObjectType(name, _, _, directives, _)
+                  if directives.exists(_.name == OneOfDirective.name) =>
+                val mapValue =
+                  marshaller.mapNode(arg).headOption.fold[Option[Map[String, Any]]](None) {
+                    case (_, value) =>
+                      value match {
+                        case None => None
+                        case Some(value) => Some(value.asInstanceOf[Map[String, Any]])
+                        case value => Some(value.asInstanceOf[Map[String, Any]])
+                      }
+                  }
+
+                mapValue match {
+                  case None => ()
+                  case Some(mapValue) =>
+                    val nonNullFields = mapValue.toList.filter { case (_, node) =>
+                      node != marshaller.nullNode
+                    }
+                    nonNullFields.size match {
+                      case 1 => ()
+                      case _ =>
+                        errors += NotExactlyOneOfField(
+                          name,
+                          sourceMapper,
+                          astValue.flatMap(_.location).toList
+                        )
+                    }
+                }
+              case _ => ()
+            }
+
+            arg
+          } catch {
             case InputParsingError(e) =>
               errors ++= e.map(
                 InvalidInputValueViolation(
